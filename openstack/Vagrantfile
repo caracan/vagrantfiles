@@ -1,0 +1,179 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+require 'socket'
+require './vagrant-provision-reboot-plugin'
+
+hostname = Socket.gethostname
+localmachineip = IPSocket.getaddress(Socket.gethostname)
+puts %Q{ This machine has the IP '#{localmachineip} and host name '#{hostname}'}
+
+
+
+# Vagrantfile API/syntax version. Don't touch unless you know what you're doing!
+VAGRANTFILE_API_VERSION = "2"
+
+
+%w(vagrant-hostmanager).each do |plugin|
+  # Will install dependent plugin
+  unless Vagrant.has_plugin?(plugin)
+    puts '*********************************'
+    puts "Installing #{plugin} plugin"
+    `vagrant plugin install #{plugin}`
+  end
+end
+
+#centos_box_name = 'centos65'
+#centos_box_url = 'https://f0fff3908f081cb6461b407be80daf97f07ac418.googledrive.com/host/0BwtuV7VyVTSkUG1PM3pCeDJ4dVE/centos7.box'
+centos_box_name = 'centos7'
+centos_box_url = 'https://dl.dropboxusercontent.com/s/w3lbekm7eunrskm/centos-7.0-x86_64.box'
+
+
+NETWORK_BASE = '192.168.50'
+END_SEGMENT = 10
+
+$provisionScript = <<SCRIPT
+
+yum install -y nfs-utils yum-pligin-local
+yum install -y augeas net-tools tcpdump yum-plugin-fastestmirror
+yum remove -y vim-minimal
+yum remove -y puppetlabs-release
+
+
+sed -i -e 's/^SELINUX=.*/SELINUX=permissive/' /etc/selinux/config
+setenforce 0
+
+yum -y install http://rdo.fedorapeople.org/rdo-release.rpm
+yum -y install openstack-packstack
+
+export ANSWERFILE=/root/packstack-answers.txt
+packstack --gen-answer-file=$ANSWERFILE
+augtool <<EOF
+
+set /augeas/load/IniFile/lens Puppet.lns
+set /augeas/load/IniFile/incl $ANSWERFILE
+
+load
+
+set /files/$ANSWERFILE/general/CONFIG_HEAT_INSTALL y
+set /files/$ANSWERFILE/general/CONFIG_HEAT_CFN_INSTALL y
+set /files/$ANSWERFILE/general/CONFIG_KEYSTONE_ADMIN_PW admin
+set /files/$ANSWERFILE/general/CONFIG_KEYSTOME_DEMO_PW demo
+set /files/$ANSWERFILE/general/CONFIG_NOVA_COMPUTE_PRIVIF lo
+set /files/$ANSWERFILE/general/CONFIG_NOVA_NETWORK_PUBIF etho
+set /files/$ANSWERFILE/general/CONFIG_NOVA_NETWORK_PRIVIF lo
+set /files/$ANSWERFILE/general/CONFIG_NEUTRON_OVS_VLAN_RANGES physnet1
+set /files/$ANSWERFILE/general/CONFIG_NEUTRON_OVS_BRIDGE_MAPPINGS physnet1:br-ex
+set /files/$ANSWERFILE/general/CONFIG_CINDER_VOLUMES_CREATE n
+
+save
+
+EOF
+
+# to avoid an issue with cinder installation we create the cinder volumes before running the install
+mkdir -p /var/lib/cinder
+dd if=/dev/zero of=/var/lib/cinder/cinder-volumes bs=1 count=0 seek=50G
+losetup --show -f /var/lib/cinder/cinder-volumes
+pvcreate /dev/loop0
+vgcreate cinder-volumes /dev/loop0
+
+packstack --answer-file=$ANSWERFILE
+
+# As were running openstack within a VM we need to configure libvirt_type to qemu
+sed -i -e 's/^virt_type=.*/virt_type=qemu/' /etc/nova/nova.conf
+#service openstack-nova-api restart
+#service openstack-nova-compute restart
+
+source ~/keystonerc_admin
+neutron router-gateway-clear router1
+neutron subnet-delete public_subnet
+neutron subnet-create --name public_subnet --enable_dhcp=False --allocation-pool=start=192.168.0.128,end=192.168.0.192 --gateway=10.0.2.2 public 192.168.0.0/24
+neutron router-gateway-set router1 public
+
+source ~/keystonerc_demo
+neutron subnet-update private_subnet --dns_nameservers list=true 10.0.2.2
+
+cat <<EOF >/etc/rc.d/rc.local
+  #!/bin/bash
+  
+ifconfig eth0 0.0.0.0 
+ifconfig br-ex 192.168.50.11
+  ovs-vsctl add-port br-ex eth0
+  ifconfig eth0 down
+  sleep 1
+  ifconfig eth0 up
+  route add default gw 10.0.2.2
+EOF
+
+chmod 0755 /etc/rc.d/rc.local
+/etc/rc.d/rc.local
+
+# set security rules to enable ping / ssh to instances
+source ~/keystonerc_admin
+nova secgroup-add-rule default icmp -1 -1 0.0.0.0/0
+nova secgroup-add-rule default tcp 22 22 0.0.0.0/0
+
+# add host public key to openstack
+nova keypair-add --pub_key /root/host.pub host_key
+nova keypair-list
+
+# add a fedora image to openstack
+#echo downloading and adding fedora 20 image to openstack
+source ~/keystonerc_admin
+
+glance image-create --name fedora --disk-format=qcow2  --file /vagrant/Fedora-x86_64-20-20140407-sda.qcow2 --container-format bare
+
+
+SCRIPT
+
+Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
+  
+
+
+  config.hostmanager.enabled = true
+  config.hostmanager.manage_host = true
+  config.hostmanager.ignore_private_ip = false
+  config.hostmanager.include_offline = true
+
+  # how many boxes do we need?
+    (1..1).each do |i|
+
+      vmname = "openstack#{i}"
+      config.vm.define vmname.to_sym do |integration|
+
+        # Every Vagrant virtual environment requires a box to build off of.
+        integration.vm.box = centos_box_name
+        integration.vm.box_url = centos_box_url
+        integration.vm.network :private_network, ip: "#{NETWORK_BASE}.#{END_SEGMENT+i}"
+        integration.vm.hostname = vmname
+      end
+      
+      config.vm.provider "virtualbox" do |v|
+        v.memory = 8192
+        v.cpus = 4
+
+#        config.ssh.pty= true
+      end
+
+      if File.exists?(File.join(Dir.home, ".ssh", "id_rsa.pub"))
+        # Read local machine's SSH Key (~/.ssh/id_rsa.pub)
+        ssh_key = File.read(File.join(Dir.home, ".ssh", "id_rsa.pub"))
+        # Copy it to VM as the /root/host.pub key
+        config.vm.provision :shell, :inline => "echo '#{ssh_key}' > /root/host.pub"
+      else
+        # Else, throw a Vagrant Error
+        raise Vagrant::Errors::VagrantError, "\n\nERROR: Public SSH Key not found at ~/host.pub"
+      end   
+
+      #config.ssh.pty = true
+      config.vm.provision "shell", inline: $provisionScript
+
+      # as there are kernal updates we need to reboot afetr script has run
+      #config.vm.provision :unix_reboot
+
+
+
+
+    end
+
+end

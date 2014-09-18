@@ -1,0 +1,80 @@
+
+
+<!DOCTYPE html>
+<html lang="en" xml:lang="en">
+  <head>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8" />
+    
+    <title>Login - OpenStack Dashboard</title>
+    
+
+<link rel="stylesheet" href="/static/dashboard/css/fb0715db393b.css" type="text/css" media="screen" />
+
+<link rel="shortcut icon" href="/static/dashboard/img/favicon.ico"/>
+
+    
+  </head>
+  <body id="splash">
+    <div class="container">
+      <div class="row large-rounded">
+        <div id="" class="login ">
+  <div class="modal-header">
+    
+    <h3>Log In</h3>
+  </div>
+  
+  <form id=""
+        ng-controller="DummyCtrl"
+        name=""
+        autocomplete="on"
+        class=""
+        action="/dashboard/auth/login/"
+        method="POST"
+         ><input type='hidden' name='csrfmiddlewaretoken' value='0GU6uGuWqqgiKKy4i7KgUKF5fg9vjmMg' />
+    <div class="modal-body clearfix">
+    
+  <fieldset>
+    
+    
+    
+    
+  <input id="id_region" name="region" type="hidden" value="http://10.0.2.15:5000/v2.0" />
+
+
+
+
+  <div class="control-group form-field clearfix ">
+    <label for="id_username">User Name:</label>
+    
+    
+    <span class="help-block">   </span>
+    <div class="input">
+      <input autofocus="autofocus" id="id_username" name="username" type="text" />
+    </div>
+  </div>
+
+  <div class="control-group form-field clearfix ">
+    <label for="id_password">Password:</label>
+    
+    
+    <span class="help-block">   </span>
+    <div class="input">
+      <input id="id_password" name="password" type="password" />
+    </div>
+  </div>
+
+
+  </fieldset>
+
+    </div>
+    <div class="modal-footer">
+  <button type="submit" class="btn btn-primary pull-right">Sign In</button>
+</div>
+  </form>
+</div>
+
+
+      </div>
+    </div>
+  </body>
+</html>

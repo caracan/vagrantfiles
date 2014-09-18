@@ -1,0 +1,61 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+require 'socket'
+
+hostname = Socket.gethostname
+localmachineip = IPSocket.getaddress(Socket.gethostname)
+puts %Q{ This machine has the IP '#{localmachineip} and host name '#{hostname}'}
+
+
+
+# Vagrantfile API/syntax version. Don't touch unless you know what you're doing!
+VAGRANTFILE_API_VERSION = "2"
+
+
+%w(vagrant-hostmanager).each do |plugin|
+  # Will install dependent plugin
+  unless Vagrant.has_plugin?(plugin)
+    puts '*********************************'
+    puts "Installing #{plugin} plugin"
+    `vagrant plugin install #{plugin}`
+  end
+end
+
+centos_box_name = 'fedora20'
+centos_box_url = 'http://opscode-vm-bento.s3.amazonaws.com/vagrant/virtualbox/opscode_fedora-20_chef-provisionerless.box'
+
+
+NETWORK_BASE = '192.168.50'
+END_SEGMENT = 10
+
+$provisionScript = <<SCRIPT
+
+yum install -y unzip
+
+SCRIPT
+
+Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
+  
+config.hostmanager.enabled = true
+  config.hostmanager.manage_host = true
+  config.hostmanager.ignore_private_ip = false
+  config.hostmanager.include_offline = true
+
+  # how many boxes do we need?
+    (1..1).each do |i|
+
+      vmname = "os#{i}"
+      config.vm.define vmname.to_sym do |integration|
+
+        # Every Vagrant virtual environment requires a box to build off of.
+        integration.vm.box = centos_box_name
+        integration.vm.box_url = centos_box_url
+        integration.vm.network :private_network, ip: "#{NETWORK_BASE}.#{END_SEGMENT+i}"
+        integration.vm.hostname = vmname
+      end
+      
+      config.vm.provision "shell", inline: $provisionScript
+    end
+
+end

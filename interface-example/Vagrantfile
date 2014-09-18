@@ -1,0 +1,94 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+require 'socket'
+require './vagrant-provision-reboot-plugin'
+
+hostname = Socket.gethostname
+localmachineip = IPSocket.getaddress(Socket.gethostname)
+puts %Q{ This machine has the IP '#{localmachineip} and host name '#{hostname}'}
+
+
+
+# Vagrantfile API/syntax version. Don't touch unless you know what you're doing!
+VAGRANTFILE_API_VERSION = "2"
+
+
+%w(vagrant-hostmanager).each do |plugin|
+  # Will install dependent plugin
+  unless Vagrant.has_plugin?(plugin)
+    puts '*********************************'
+    puts "Installing #{plugin} plugin"
+    `vagrant plugin install #{plugin}`
+  end
+end
+
+centos_box_name = 'centos7'
+centos_box_url = 'https://dl.dropboxusercontent.com/s/w3lbekm7eunrskm/centos-7.0-x86_64.box'
+
+
+NETWORK_BASE = '192.168.90'
+END_SEGMENT = 10
+
+$provisionScript = <<SCRIPT
+
+cat <<EOF >/etc/rc.d/rc.local
+  #!/bin/bash
+  ovs-vsctl add-br br-ex 
+  ovs-vsctl add-port br-ex eth0
+  route add default gw 10.0.2.2
+EOF
+
+chmod 0755 /etc/rc.d/rc.local
+#/etc/rc.d/rc.local
+
+
+SCRIPT
+
+Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
+  
+  config.hostmanager.enabled = true
+  config.hostmanager.manage_host = true
+  config.hostmanager.ignore_private_ip = false
+  config.hostmanager.include_offline = true
+
+  # how many boxes do we need?
+    (1..1).each do |i|
+
+      vmname = "tester#{i}"
+      config.vm.define vmname.to_sym do |integration|
+
+        # Every Vagrant virtual environment requires a box to build off of.
+        integration.vm.box = centos_box_name
+        integration.vm.box_url = centos_box_url
+        integration.vm.network :private_network, ip: "#{NETWORK_BASE}.#{END_SEGMENT+i}"
+        integration.vm.hostname = vmname
+      end
+      
+      config.vm.provider "virtualbox" do |v|
+        v.memory = 8192
+        v.cpus = 4
+      end
+
+      if File.exists?(File.join(Dir.home, ".ssh", "id_rsa.pub"))
+        # Read local machine's SSH Key (~/.ssh/id_rsa.pub)
+        ssh_key = File.read(File.join(Dir.home, ".ssh", "id_rsa.pub"))
+        # Copy it to VM as the /root/host.pub key
+        config.vm.provision :shell, :inline => "echo '#{ssh_key}' > /root/host.pub"
+      else
+        # Else, throw a Vagrant Error
+        raise Vagrant::Errors::VagrantError, "\n\nERROR: Public SSH Key not found at ~/host.pub"
+      end   
+
+      config.ssh.pty = true
+      config.vm.provision "shell", inline: $provisionScript
+
+      # as there are kernal updates we need to reboot afetr script has run
+      #config.vm.provision :unix_reboot
+
+
+
+
+    end
+
+end
