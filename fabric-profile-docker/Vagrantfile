@@ -1,0 +1,70 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+require 'socket'
+require './vagrant-provision-reboot-plugin'
+
+hostname = Socket.gethostname
+localmachineip = IPSocket.getaddress(Socket.gethostname)
+puts %Q{ This machine has the IP '#{localmachineip} and host name '#{hostname}'}
+
+
+
+# Vagrantfile API/syntax version. Don't touch unless you know what you're doing!
+VAGRANTFILE_API_VERSION = "2"
+
+centos_box_name = 'centos7'
+centos_box_url = 'https://dl.dropboxusercontent.com/s/w3lbekm7eunrskm/centos-7.0-x86_64.box'
+
+
+REGISTRY_BASE = '192.168.80.01'
+NETWORK_BASE = '192.168.90'
+END_SEGMENT = 10
+
+$provisionScript = <<SCRIPT
+
+
+
+SCRIPT
+
+Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
+  
+
+  # how many boxes do we need?
+    (1..1).each do |i|
+
+      vmname = "dockerregistry"
+      config.vm.define vmname.to_sym do |registry|
+
+        # Every Vagrant virtual environment requires a box to build off of.
+        registry.vm.box = centos_box_name
+        registry.vm.box_url = centos_box_url
+        registry.vm.network :private_network, ip: "#{REGISTRY_BASE}"
+        registry.vm.hostname = vmname
+      end
+      
+      config.ssh.pty = true
+      config.vm.provision "shell", inline: $provisionScript
+
+
+    end
+
+# create docker nodes
+(1..2).each do |i|
+
+      vmname = "dockernode#{i}"
+      config.vm.define vmname.to_sym do |dockernode|
+
+        # Every Vagrant virtual environment requires a box to build off of.
+        dockernode.vm.box = centos_box_name
+        dockernode.vm.box_url = centos_box_url
+        dockernode.vm.network :private_network, ip: "#{NETWORK_BASE}.#{END_SEGMENT+i}"
+        dockernode.vm.hostname = vmname
+      end
+
+      config.ssh.pty = true
+      config.vm.provision "shell", inline: $provisionScript
+
+
+    end
+end
