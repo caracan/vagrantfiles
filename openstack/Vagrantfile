@@ -96,7 +96,7 @@ neutron subnet-update private_subnet --dns_nameservers list=true 10.0.2.2
 cat <<EOF >/etc/rc.d/rc.local
   #!/bin/bash
   
-ifconfig eth0 0.0.0.0 
+ifconfig eth0 0.0.0.0
 ifconfig br-ex 192.168.50.11
   ovs-vsctl add-port br-ex eth0
   ifconfig eth0 down
@@ -106,7 +106,7 @@ ifconfig br-ex 192.168.50.11
 EOF
 
 chmod 0755 /etc/rc.d/rc.local
-/etc/rc.d/rc.local
+#/etc/rc.d/rc.local
 
 # set security rules to enable ping / ssh to instances
 source ~/keystonerc_admin
